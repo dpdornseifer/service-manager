@@ -14,39 +14,46 @@
  * limitations under the License.
  */
 
-package api
+package notifications
 
 import (
 	"net/http"
 
-	"github.com/Peripli/service-manager/pkg/util"
+	"github.com/Peripli/service-manager/pkg/ws"
+
 	"github.com/Peripli/service-manager/pkg/web"
 )
 
-// NotificationController implements api.Controller by providing service plans API logic
-type NotificationController struct {
+// Controller implements api.Controller by providing service plans API logic
+type Controller struct {
+	wsUpgrader ws.Upgrader
+	wsHandler  ws.Handler
 }
 
 // Routes returns the routes for notifications
-func (c *NotificationController) Routes() []web.Route {
+func (c *Controller) Routes() []web.Route {
 	return []web.Route{
 		{
 			Endpoint: web.Endpoint{
 				Method: http.MethodGet,
 				Path:   web.NotificationsURL,
 			},
-			Handler: func(req *web.Request) (resp *web.Response, err error) {
-				return nil, &util.HTTPError{
-					StatusCode:  http.StatusNotImplemented,
-					Description: "Not Implemented",
-					ErrorType:   "Not Implemented",
-				}
+			Handler: c.handleWS,
+		},
+		{
+			Endpoint: web.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/v1/test",
 			},
+			Handler: c.handleTest,
 		},
 	}
 }
 
 // TODO: create the actual websocket handling and disable CRUD and List operations
-func NewNotificationController() *NotificationController {
-	return &NotificationController{}
+func NewController(wsUpgrader ws.Upgrader, wsHandler ws.Handler) *Controller {
+	return &Controller{
+		wsUpgrader: wsUpgrader,
+		wsHandler:  wsHandler,
+	}
 }

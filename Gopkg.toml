@@ -14,6 +14,10 @@
   version = "1.0.4"
 
 [[constraint]]
+  name = "github.com/gorilla/websocket"
+  version = "1.4.0"
+
+[[constraint]]
  name = "github.com/onrik/logrus"
  branch = "master"
 

@@ -22,12 +22,15 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/Peripli/service-manager/pkg/ws"
+
 	"github.com/Peripli/service-manager/pkg/types"
 
 	"github.com/Peripli/service-manager/api/filters"
 	"github.com/Peripli/service-manager/api/filters/authn/basic"
 	"github.com/Peripli/service-manager/api/filters/authn/oauth"
 	"github.com/Peripli/service-manager/api/info"
+	"github.com/Peripli/service-manager/api/notifications"
 	"github.com/Peripli/service-manager/api/osb"
 	"github.com/Peripli/service-manager/pkg/health"
 	"github.com/Peripli/service-manager/pkg/security"
@@ -63,11 +66,18 @@ func (s *Settings) Validate() error {
 }
 
 // NewInterceptableTransactionalRepository returns the minimum set of REST APIs needed for the Service Manager
-func New(ctx context.Context, repository storage.Repository, settings *Settings, encrypter security.Encrypter) (*web.API, error) {
+func New(ctx context.Context, repository storage.Repository, settings *Settings, encrypter security.Encrypter, wsCh chan struct{}) (*web.API, error) {
 	bearerAuthnFilter, err := oauth.NewFilter(ctx, settings.TokenIssuerURL, settings.ClientID)
 	if err != nil {
 		return nil, err
 	}
+
+	wsUpgrader := ws.NewUpgrader(ctx, wsCh)
+	go func() {
+		<-ctx.Done()
+		wsUpgrader.Shutdown()
+	}()
+	wsHandler := &ws.SmHandler{}
 
 	return &web.API{
 		// Default controllers - more filters can be registered using the relevant API methods
@@ -81,7 +91,7 @@ func New(ctx context.Context, repository storage.Repository, settings *Settings,
 			NewController(repository, web.VisibilitiesURL, types.VisibilityType, func() types.Object {
 				return &types.Visibility{}
 			}),
-			NewNotificationController(),
+			notifications.NewController(wsUpgrader, wsHandler),
 			NewServiceOfferingController(repository),
 			NewServicePlanController(repository),
 			&info.Controller{

@@ -58,6 +58,8 @@ type ServiceManagerBuilder struct {
 	Notificator notifications.Notificator
 	ctx         context.Context
 	cfg         *server.Settings
+
+	wsCh chan struct{}
 }
 
 // ServiceManager  struct
@@ -65,6 +67,8 @@ type ServiceManager struct {
 	ctx         context.Context
 	Server      *server.Server
 	Notificator notifications.Notificator
+
+	wsCh chan struct{}
 }
 
 // DefaultEnv creates a default environment that can be used to boot up a Service Manager
@@ -134,7 +138,8 @@ func New(ctx context.Context, cancel context.CancelFunc, env env.Environment) *S
 	log.C(ctx).Info("Setting up Service Manager core API...")
 	interceptableRepository := storage.NewInterceptableTransactionalRepository(smStorage, encrypter)
 
-	API, err := api.New(ctx, interceptableRepository, cfg.API, encrypter)
+	wsCh := make(chan struct{})
+	API, err := api.New(ctx, interceptableRepository, cfg.API, encrypter, wsCh)
 	if err != nil {
 		panic(fmt.Sprintf("error creating core api: %s", err))
 	}
@@ -151,6 +156,7 @@ func New(ctx context.Context, cancel context.CancelFunc, env env.Environment) *S
 		API:         API,
 		Storage:     interceptableRepository,
 		Notificator: pgNotificator,
+		wsCh:        wsCh,
 	}
 
 	smb.WithCreateInterceptorProvider(types.ServiceBrokerType, &interceptors.BrokerCreateInterceptorProvider{
@@ -176,6 +182,7 @@ func (smb *ServiceManagerBuilder) Build() *ServiceManager {
 		ctx:         smb.ctx,
 		Server:      srv,
 		Notificator: smb.Notificator,
+		wsCh:        smb.wsCh,
 	}
 }
 
@@ -192,7 +199,7 @@ func (sm *ServiceManager) Run() {
 	if err := sm.Notificator.Start(sm.ctx, wg); err != nil {
 		log.C(sm.ctx).WithError(err).Panic("could not start SM notificator")
 	}
-	sm.Server.Run(sm.ctx)
+	sm.Server.Run(sm.ctx, sm.wsCh)
 	wg.Wait()
 }
 
