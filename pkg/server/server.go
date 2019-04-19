@@ -112,7 +112,7 @@ func registerControllers(API *web.API, router *mux.Router, config *Settings) {
 }
 
 // Run starts the server awaiting for incoming requests
-func (s *Server) Run(ctx context.Context, wsCh chan struct{}) {
+func (s *Server) Run(ctx context.Context) {
 	if err := s.Config.Validate(); err != nil {
 		panic(fmt.Sprintf("invalid server config: %s", err))
 	}
@@ -123,12 +123,12 @@ func (s *Server) Run(ctx context.Context, wsCh chan struct{}) {
 		ReadTimeout:    s.Config.RequestTimeout,
 		MaxHeaderBytes: s.Config.MaxHeaderBytes,
 	}
-	startServer(ctx, handler, s.Config.ShutdownTimeout, wsCh)
+	startServer(ctx, handler, s.Config.ShutdownTimeout)
 }
 
-func startServer(ctx context.Context, server *http.Server, shutdownTimeout time.Duration, wsCh chan struct{}) {
+func startServer(ctx context.Context, server *http.Server, shutdownTimeout time.Duration) {
 	stop := make(chan struct{})
-	go gracefulShutdown(ctx, server, shutdownTimeout, wsCh, stop)
+	go gracefulShutdown(ctx, server, shutdownTimeout, stop)
 
 	log.C(ctx).Infof("Server listening on %s...", server.Addr)
 
@@ -138,9 +138,8 @@ func startServer(ctx context.Context, server *http.Server, shutdownTimeout time.
 	<-stop
 }
 
-func gracefulShutdown(ctx context.Context, server *http.Server, shutdownTimeout time.Duration, wsCh, stop chan struct{}) {
+func gracefulShutdown(ctx context.Context, server *http.Server, shutdownTimeout time.Duration, stop chan struct{}) {
 	<-ctx.Done()
-	<-wsCh
 
 	c, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()

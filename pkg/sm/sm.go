@@ -138,12 +138,10 @@ func New(ctx context.Context, cancel context.CancelFunc, env env.Environment) *S
 	log.C(ctx).Info("Setting up Service Manager core API...")
 	interceptableRepository := storage.NewInterceptableTransactionalRepository(smStorage, encrypter)
 
-	wsCh := make(chan struct{})
-	API, err := api.New(ctx, interceptableRepository, cfg.API, encrypter, wsCh)
+	API, err := api.New(ctx, interceptableRepository, cfg.API, encrypter)
 	if err != nil {
 		panic(fmt.Sprintf("error creating core api: %s", err))
 	}
-
 	API.AddHealthIndicator(&storage.HealthIndicator{Pinger: storage.PingFunc(smStorage.Ping)})
 	pgNotificator, err := postgresNotificator.NewNotificator(smStorage, cfg.Storage, cfg.Notifications)
 	if err != nil {

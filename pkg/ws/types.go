@@ -5,5 +5,10 @@ import (
 )
 
 type Conn struct {
-	conn *websocket.Conn
+	*websocket.Conn
+	ID string
+
+	ReadErrCh   chan error
+	Shutdown    chan struct{}
+	RemoteClose chan struct{}
 }

@@ -27,7 +27,6 @@ import (
 // Controller implements api.Controller by providing service plans API logic
 type Controller struct {
 	wsUpgrader ws.Upgrader
-	wsHandler  ws.Handler
 }
 
 // Routes returns the routes for notifications
@@ -40,20 +39,12 @@ func (c *Controller) Routes() []web.Route {
 			},
 			Handler: c.handleWS,
 		},
-		{
-			Endpoint: web.Endpoint{
-				Method: http.MethodGet,
-				Path:   "/v1/test",
-			},
-			Handler: c.handleTest,
-		},
 	}
 }
 
 // TODO: create the actual websocket handling and disable CRUD and List operations
-func NewController(wsUpgrader ws.Upgrader, wsHandler ws.Handler) *Controller {
+func NewController(wsUpgrader ws.Upgrader) *Controller {
 	return &Controller{
 		wsUpgrader: wsUpgrader,
-		wsHandler:  wsHandler,
 	}
 }
