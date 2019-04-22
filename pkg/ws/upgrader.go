@@ -14,8 +14,8 @@ import (
 )
 
 type UpgraderOptions struct {
-	PingTimeoutMs int64 `mapstructure:"ping_timeout_ms"`
-	CloseTimeout  int64 `mapstructure:"close_timeout_ms`
+	PingTimeout  time.Duration `mapstructure:"ping_timeout"`
+	WriteTimeout time.Duration `mapstructure:"write_timeout"`
 }
 
 func NewUpgrader(baseCtx context.Context, done chan struct{}, options *UpgraderOptions) *SmUpgrader {
@@ -65,7 +65,7 @@ func (u *SmUpgrader) Upgrade(rw http.ResponseWriter, req *http.Request, header h
 func (u *SmUpgrader) handleConn(c *Conn) {
 	for {
 		select {
-		case readErr := <-c.ReadErrCh:
+		case <-c.ReadErrCh:
 			u.RemoveConn(c.ID)
 			return
 		default:
@@ -105,10 +105,12 @@ func (u *SmUpgrader) setCloseHandler(c *Conn) {
 }
 
 func (u *SmUpgrader) setConnTimeout(c *Conn) {
-	c.SetReadDeadline(time.Now().Add(time.Duration(u.options.PingTimeoutMs)))
+	c.SetReadDeadline(time.Now().Add(u.options.PingTimeout))
+	// TODO: How to set write deadline?
+	// c.SetWriteDeadline(time.Now().Add(u.options.WriteTimeout))
 
 	c.SetPingHandler(func(message string) error {
-		c.SetReadDeadline(time.Now().Add(time.Duration(u.options.PingTimeoutMs)))
+		c.SetReadDeadline(time.Now().Add(u.options.PingTimeout))
 
 		// TODO: Deadline?
 		err := c.WriteControl(websocket.PongMessage, []byte(message), time.Time{})
@@ -127,9 +129,11 @@ func (u *SmUpgrader) addConn(c *websocket.Conn) (*Conn, error) {
 		return nil, err
 	}
 	conn := &Conn{
-		Conn: c,
-		ID:   uuid.String(),
-		Stop: make(chan struct{}),
+		Conn:        c,
+		ID:          uuid.String(),
+		Shutdown:    make(chan struct{}),
+		RemoteClose: make(chan struct{}),
+		ReadErrCh:   make(chan error),
 	}
 
 	u.connMutex.Lock()

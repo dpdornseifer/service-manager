@@ -267,7 +267,9 @@ func newWsHandler() *wsHandler {
 func (h *wsHandler) Write(c *ws.Conn) {
 	for {
 		select {
-		case <-c.Stop:
+		case <-c.RemoteClose:
+			c.Close()
+		case <-c.Shutdown:
 			c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Time{})
 			c.Close()
 			// TODO: Deregister from notificator
@@ -284,7 +286,6 @@ func (h *wsHandler) Write(c *ws.Conn) {
 
 func (h *wsHandler) Read(c *ws.Conn) {
 	defer func() {
-		// TODO: Upgrader.RemoveConn(c.ID)
 		c.Close()
 	}()
 
