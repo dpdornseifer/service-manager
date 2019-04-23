@@ -1,6 +1,8 @@
 package ws
 
 import (
+	"sync"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -8,7 +10,8 @@ type Conn struct {
 	*websocket.Conn
 	ID string
 
-	ReadErrCh   chan error
-	Shutdown    chan struct{}
-	RemoteClose chan struct{}
+	Done     chan struct{}
+	Shutdown chan struct{}
+
+	work *sync.WaitGroup
 }

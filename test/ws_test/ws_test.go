@@ -20,6 +20,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -51,17 +52,20 @@ var _ = Describe("WS", func() {
 	var resp *http.Response
 	var testWsHandler *wsHandler
 	var testWsHandlers []*wsHandler
+	var upgrader ws.Upgrader
+	var work sync.WaitGroup
 
-	wsPingTimeout := int64(time.Second * 20)
+	wsPingTimeout := time.Second * 20
 
 	JustBeforeEach(func() {
 		testWsHandler = newWsHandler()
 		testWsHandlers = append([]*wsHandler{testWsHandler}, testWsHandlers...)
-		done := make(chan struct{})
-
+		work = sync.WaitGroup{}
+		work.Add(1)
+		upgrader = ws.NewUpgrader(context.Background(), &work, &ws.UpgraderOptions{PingTimeout: wsPingTimeout})
 		ctx = common.NewTestContextBuilder().WithSMExtensions(func(ctx context.Context, smb *sm.ServiceManagerBuilder, e env.Environment) error {
 			smb.RegisterControllers(&wsController{
-				wsUpgrader: ws.NewUpgrader(ctx, done, &ws.UpgraderOptions{PingTimeoutMs: wsPingTimeout}),
+				wsUpgrader: upgrader,
 				wsHandlers: testWsHandlers,
 			})
 			return nil
@@ -109,7 +113,7 @@ var _ = Describe("WS", func() {
 
 		Context("when connection timeout is reached", func() {
 			BeforeEach(func() {
-				wsPingTimeout = int64(time.Millisecond)
+				wsPingTimeout = time.Millisecond
 			})
 
 			It("client should receive close message", func() {
@@ -123,7 +127,7 @@ var _ = Describe("WS", func() {
 			var pongCh chan struct{}
 
 			BeforeEach(func() {
-				wsPingTimeout = int64(time.Second * 2)
+				wsPingTimeout = time.Second * 2
 			})
 
 			JustBeforeEach(func() {
@@ -194,6 +198,14 @@ var _ = Describe("WS", func() {
 				Expect(receivedError).To(ContainSubstring("websocket: close"))
 				testWsHandler.doSend <- "msg"
 				assertMessage(wsconn, "msg")
+			})
+		})
+
+		Context("when upgrader is shutdown", func() {
+			It("should close all connections", func() {
+				err := upgrader.Shutdown()
+				work.Wait()
+				Expect(err).ShouldNot(HaveOccurred())
 			})
 		})
 	})
@@ -267,12 +279,9 @@ func newWsHandler() *wsHandler {
 func (h *wsHandler) Write(c *ws.Conn) {
 	for {
 		select {
-		case <-c.RemoteClose:
-			c.Close()
 		case <-c.Shutdown:
 			c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Time{})
 			c.Close()
-			// TODO: Deregister from notificator
 			return
 		case msg := <-h.doSend:
 			err := c.WriteMessage(websocket.TextMessage, []byte(msg))
@@ -286,6 +295,7 @@ func (h *wsHandler) Write(c *ws.Conn) {
 
 func (h *wsHandler) Read(c *ws.Conn) {
 	defer func() {
+		close(c.Done)
 		c.Close()
 	}()
 
@@ -294,7 +304,6 @@ func (h *wsHandler) Read(c *ws.Conn) {
 		if err == nil {
 			h.receivedMessages <- string(received)
 		} else {
-			c.ReadErrCh <- err
 			h.receivedErrors <- err.Error()
 		}
 	}

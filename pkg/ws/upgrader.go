@@ -18,23 +18,26 @@ type UpgraderOptions struct {
 	WriteTimeout time.Duration `mapstructure:"write_timeout"`
 }
 
-func NewUpgrader(baseCtx context.Context, done chan struct{}, options *UpgraderOptions) *SmUpgrader {
+func NewUpgrader(baseCtx context.Context, work *sync.WaitGroup, options *UpgraderOptions) *SmUpgrader {
 	return &SmUpgrader{
-		conns:   make(map[string]*Conn),
-		baseCtx: baseCtx,
-		done:    done,
-		options: options,
+		work:        work,
+		conns:       make(map[string]*Conn),
+		baseCtx:     baseCtx,
+		options:     options,
+		connWorkers: &sync.WaitGroup{},
 	}
 }
 
 type SmUpgrader struct {
 	options *UpgraderOptions
 
-	conns     map[string]*Conn
-	connMutex sync.Mutex
+	work *sync.WaitGroup
+
+	conns       map[string]*Conn
+	connMutex   sync.Mutex
+	connWorkers *sync.WaitGroup
 
 	baseCtx       context.Context
-	done          chan struct{}
 	isShutDown    bool
 	shutdownMutex sync.Mutex
 }
@@ -51,7 +54,7 @@ func (u *SmUpgrader) Upgrade(rw http.ResponseWriter, req *http.Request, header h
 	if err != nil {
 		return nil, err
 	}
-	wsConn, err := u.addConn(conn)
+	wsConn, err := u.addConn(conn, u.connWorkers)
 	if err != nil {
 		return nil, err
 	}
@@ -65,24 +68,16 @@ func (u *SmUpgrader) Upgrade(rw http.ResponseWriter, req *http.Request, header h
 func (u *SmUpgrader) handleConn(c *Conn) {
 	for {
 		select {
-		case <-c.ReadErrCh:
-			u.RemoveConn(c.ID)
+		case <-c.Done:
+			u.connWorkers.Done()
+			u.removeConn(c.ID)
 			return
 		default:
 		}
 	}
 }
 
-func (u *SmUpgrader) RemoveConn(id string) {
-	u.connMutex.Lock()
-	defer u.connMutex.Unlock()
-	delete(u.conns, id)
-}
-
 func (u *SmUpgrader) Shutdown() error {
-	defer func() {
-		close(u.done)
-	}()
 	u.shutdownMutex.Lock()
 	u.isShutDown = true
 	u.shutdownMutex.Unlock()
@@ -93,20 +88,23 @@ func (u *SmUpgrader) Shutdown() error {
 	}
 	u.conns = nil
 
+	u.connWorkers.Wait()
+	u.work.Done()
+
 	return err
 }
 
 func (u *SmUpgrader) setCloseHandler(c *Conn) {
 	c.SetCloseHandler(func(code int, text string) error {
-		u.RemoveConn(c.ID)
-		close(c.RemoteClose)
+		u.removeConn(c.ID)
+		c.Close()
 		return nil
 	})
 }
 
 func (u *SmUpgrader) setConnTimeout(c *Conn) {
 	c.SetReadDeadline(time.Now().Add(u.options.PingTimeout))
-	// TODO: How to set write deadline?
+	// TODO: How to set write deadline, each time after write is executed?
 	// c.SetWriteDeadline(time.Now().Add(u.options.WriteTimeout))
 
 	c.SetPingHandler(func(message string) error {
@@ -123,21 +121,27 @@ func (u *SmUpgrader) setConnTimeout(c *Conn) {
 	})
 }
 
-func (u *SmUpgrader) addConn(c *websocket.Conn) (*Conn, error) {
+func (u *SmUpgrader) addConn(c *websocket.Conn, workGroup *sync.WaitGroup) (*Conn, error) {
 	uuid, err := uuid.NewV4()
 	if err != nil {
 		return nil, err
 	}
 	conn := &Conn{
-		Conn:        c,
-		ID:          uuid.String(),
-		Shutdown:    make(chan struct{}),
-		RemoteClose: make(chan struct{}),
-		ReadErrCh:   make(chan error),
+		Conn:     c,
+		ID:       uuid.String(),
+		Shutdown: make(chan struct{}),
+		Done:     make(chan struct{}),
+		work:     workGroup,
 	}
 
 	u.connMutex.Lock()
 	defer u.connMutex.Unlock()
 	u.conns[conn.ID] = conn
 	return conn, nil
+}
+
+func (u *SmUpgrader) removeConn(id string) {
+	u.connMutex.Lock()
+	defer u.connMutex.Unlock()
+	delete(u.conns, id)
 }
