@@ -182,7 +182,6 @@ var _ = test.DescribeTestsFor(test.TestCase{
 								JSON().Object().
 								ContainsMap(expectedBrokerResponse).
 								Keys().NotContains("services", "credentials")
-
 							assertInvocationCount(brokerServer.CatalogEndpointRequests, 1)
 						})
 					}

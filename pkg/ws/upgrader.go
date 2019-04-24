@@ -18,11 +18,9 @@ type UpgraderOptions struct {
 	WriteTimeout time.Duration `mapstructure:"write_timeout"`
 }
 
-func NewUpgrader(baseCtx context.Context, work *sync.WaitGroup, options *UpgraderOptions) *SmUpgrader {
+func NewUpgrader(options *UpgraderOptions) *SmUpgrader {
 	return &SmUpgrader{
-		work:        work,
 		conns:       make(map[string]*Conn),
-		baseCtx:     baseCtx,
 		options:     options,
 		connWorkers: &sync.WaitGroup{},
 	}
@@ -31,15 +29,17 @@ func NewUpgrader(baseCtx context.Context, work *sync.WaitGroup, options *Upgrade
 type SmUpgrader struct {
 	options *UpgraderOptions
 
-	work *sync.WaitGroup
-
 	conns       map[string]*Conn
 	connMutex   sync.Mutex
 	connWorkers *sync.WaitGroup
 
-	baseCtx       context.Context
 	isShutDown    bool
 	shutdownMutex sync.Mutex
+}
+
+func (u *SmUpgrader) Start(baseCtx context.Context, work *sync.WaitGroup) {
+	work.Add(1)
+	go u.shutdown(baseCtx, work)
 }
 
 func (u *SmUpgrader) Upgrade(rw http.ResponseWriter, req *http.Request, header http.Header) (*Conn, error) {
@@ -48,6 +48,11 @@ func (u *SmUpgrader) Upgrade(rw http.ResponseWriter, req *http.Request, header h
 	if u.isShutDown {
 		return nil, fmt.Errorf("upgrader is going to shutdown and does not accept new connections")
 	}
+
+	if header == nil {
+		header = http.Header{}
+	}
+	header.Add("max_ping_interval", u.options.PingTimeout.String())
 
 	upgrader := &websocket.Upgrader{}
 	conn, err := upgrader.Upgrade(rw, req, header)
@@ -60,16 +65,18 @@ func (u *SmUpgrader) Upgrade(rw http.ResponseWriter, req *http.Request, header h
 	}
 	u.setConnTimeout(wsConn)
 	u.setCloseHandler(wsConn)
+
+	u.connWorkers.Add(1)
 	go u.handleConn(wsConn)
 
 	return wsConn, nil
 }
 
 func (u *SmUpgrader) handleConn(c *Conn) {
+	defer u.connWorkers.Done()
 	for {
 		select {
 		case <-c.Done:
-			u.connWorkers.Done()
 			u.removeConn(c.ID)
 			return
 		default:
@@ -77,21 +84,22 @@ func (u *SmUpgrader) handleConn(c *Conn) {
 	}
 }
 
-func (u *SmUpgrader) Shutdown() error {
+func (u *SmUpgrader) shutdown(ctx context.Context, work *sync.WaitGroup) {
+	<-ctx.Done()
+	defer work.Done()
+
 	u.shutdownMutex.Lock()
 	u.isShutDown = true
 	u.shutdownMutex.Unlock()
 
-	var err error
 	for _, conn := range u.conns {
 		close(conn.Shutdown)
 	}
+	u.connMutex.Lock()
 	u.conns = nil
+	u.connMutex.Unlock()
 
 	u.connWorkers.Wait()
-	u.work.Done()
-
-	return err
 }
 
 func (u *SmUpgrader) setCloseHandler(c *Conn) {

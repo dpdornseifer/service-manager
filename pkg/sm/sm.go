@@ -28,13 +28,13 @@ import (
 	"github.com/Peripli/service-manager/notifications"
 
 	"github.com/Peripli/service-manager/pkg/types"
+	"github.com/Peripli/service-manager/pkg/ws"
 	"github.com/Peripli/service-manager/storage/interceptors"
 	osbc "github.com/pmorie/go-open-service-broker-client/v2"
 
 	"github.com/Peripli/service-manager/api"
 	"github.com/Peripli/service-manager/api/healthcheck"
 	"github.com/Peripli/service-manager/config"
-	postgresNotificator "github.com/Peripli/service-manager/notifications/postgres"
 	"github.com/Peripli/service-manager/pkg/log"
 	"github.com/Peripli/service-manager/pkg/security"
 	"github.com/Peripli/service-manager/pkg/server"
@@ -59,7 +59,8 @@ type ServiceManagerBuilder struct {
 	ctx         context.Context
 	cfg         *server.Settings
 
-	wsCh chan struct{}
+	wsUpgrader ws.Upgrader
+	wsCh       chan struct{}
 }
 
 // ServiceManager  struct
@@ -68,7 +69,8 @@ type ServiceManager struct {
 	Server      *server.Server
 	Notificator notifications.Notificator
 
-	wsCh chan struct{}
+	wsUpgrader ws.Upgrader
+	wsCh       chan struct{}
 }
 
 // DefaultEnv creates a default environment that can be used to boot up a Service Manager
@@ -138,7 +140,24 @@ func New(ctx context.Context, cancel context.CancelFunc, env env.Environment) *S
 	log.C(ctx).Info("Setting up Service Manager core API...")
 	interceptableRepository := storage.NewInterceptableTransactionalRepository(smStorage, encrypter)
 
-	API, err := api.New(ctx, interceptableRepository, cfg.API, encrypter)
+	notificationSettings := pgNotification.DefaultSettings()
+	notificationSettings.URI = cfg.Storage.URI
+	pgNotificaitonStorage, err := pgNotification.NewNotificationStorage(smStorage, notificationSettings)
+	if err != nil {
+		panic(fmt.Errorf("could not initialize postgres notification storage: %v", err))
+	}
+	// TODO: Magic number
+	pgNotificator, err := pgNotification.NewNotificator(pgNotificaitonStorage, 100)
+	if err != nil {
+		panic(fmt.Errorf("could not initialize postgres notificator: %v", err))
+	}
+
+	// TODO: Magic number
+	wsUpgrader := ws.NewUpgrader(&ws.UpgraderOptions{
+		PingTimeout: time.Second * 5,
+	})
+
+	API, err := api.New(ctx, interceptableRepository, cfg.API, encrypter, wsUpgrader, pgNotificator)
 	if err != nil {
 		panic(fmt.Sprintf("error creating core api: %s", err))
 	}
@@ -154,6 +173,7 @@ func New(ctx context.Context, cancel context.CancelFunc, env env.Environment) *S
 		API:         API,
 		Storage:     interceptableRepository,
 		Notificator: pgNotificator,
+		wsUpgrader:  wsUpgrader,
 		wsCh:        wsCh,
 	}
 
@@ -181,6 +201,7 @@ func (smb *ServiceManagerBuilder) Build() *ServiceManager {
 		Server:      srv,
 		Notificator: smb.Notificator,
 		wsCh:        smb.wsCh,
+		wsUpgrader:  smb.wsUpgrader,
 	}
 }
 
@@ -197,6 +218,7 @@ func (sm *ServiceManager) Run() {
 	if err := sm.Notificator.Start(sm.ctx, wg); err != nil {
 		log.C(sm.ctx).WithError(err).Panic("could not start SM notificator")
 	}
+	sm.wsUpgrader.Start(sm.ctx, sm.wg)
 	sm.Server.Run(sm.ctx, sm.wsCh)
 	wg.Wait()
 }

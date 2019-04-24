@@ -19,6 +19,9 @@ package notifications
 import (
 	"net/http"
 
+	"github.com/Peripli/service-manager/notifications"
+	"github.com/Peripli/service-manager/storage"
+
 	"github.com/Peripli/service-manager/pkg/ws"
 
 	"github.com/Peripli/service-manager/pkg/web"
@@ -26,7 +29,9 @@ import (
 
 // Controller implements api.Controller by providing service plans API logic
 type Controller struct {
-	wsUpgrader ws.Upgrader
+	repository  storage.Repository
+	wsUpgrader  ws.Upgrader
+	notificator notifications.Notificator
 }
 
 // Routes returns the routes for notifications
@@ -43,8 +48,10 @@ func (c *Controller) Routes() []web.Route {
 }
 
 // TODO: create the actual websocket handling and disable CRUD and List operations
-func NewController(wsUpgrader ws.Upgrader) *Controller {
+func NewController(repository storage.Repository, wsUpgrader ws.Upgrader, notificator notifications.Notificator) *Controller {
 	return &Controller{
-		wsUpgrader: wsUpgrader,
+		repository:  repository,
+		wsUpgrader:  wsUpgrader,
+		notificator: notificator,
 	}
 }

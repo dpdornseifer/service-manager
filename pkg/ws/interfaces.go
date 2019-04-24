@@ -1,8 +1,12 @@
 package ws
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+	"sync"
+)
 
 type Upgrader interface {
 	Upgrade(http.ResponseWriter, *http.Request, http.Header) (*Conn, error)
-	Shutdown() error
+	Start(context.Context, *sync.WaitGroup)
 }

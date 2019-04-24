@@ -32,6 +32,7 @@ var ErrQueueClosed = errors.New("queue closed")
 var ErrQueueFull = errors.New("queue is full")
 
 // NotificationQueue is used for receiving notifications
+//go:generate counterfeiter . NotificationQueue
 type NotificationQueue interface {
 	// Enqueue adds a new notification for processing.
 	Enqueue(notification *types.Notification) error
@@ -47,6 +48,7 @@ type NotificationQueue interface {
 }
 
 // Notificator is used for receiving notifications for SM events
+//go:generate counterfeiter . Notificator
 type Notificator interface {
 	// Start starts the Notificator
 	Start(ctx context.Context, group *sync.WaitGroup) error
