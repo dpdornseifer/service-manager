@@ -52,39 +52,26 @@ func (c *Controller) handleWS(req *web.Request) (*web.Response, error) {
 	}
 
 	rw := req.HijackResponseWriter()
+
+	done := make(chan struct{}, 1)
 	conn, err := c.wsUpgrader.Upgrade(rw, req.Request, http.Header{
 		"last_known_revision": []string{strconv.FormatInt(lastKnownRevision, 10)},
-	})
+	}, done)
 	if err != nil {
 		c.unregisterConsumer(notificationQueue)
 		return nil, err
 	}
 
-	go c.writeLoop(conn, notificationsList, notificationQueue)
-	go c.readLoop(conn)
+	go c.writeLoop(conn, notificationsList, notificationQueue, done)
+	go c.readLoop(conn, done)
 
 	return &web.Response{}, nil
 }
 
-func (c *Controller) readLoop(conn *ws.Conn) {
-	defer func() {
-		close(conn.Done)
-		conn.Close()
-	}()
-
-	for {
-		_, _, err := conn.ReadMessage()
-		if err != nil {
-			log.D().Errorf("ws: could not read: %v", err)
-			return
-		}
-	}
-}
-
-func (c *Controller) writeLoop(conn *ws.Conn, notificationsList types.ObjectList, q notifications.NotificationQueue) {
+func (c *Controller) writeLoop(conn *ws.Conn, notificationsList types.ObjectList, q notifications.NotificationQueue, done chan<- struct{}) {
 	defer c.unregisterConsumer(q)
 	defer func() {
-		close(conn.Done)
+		done <- struct{}{}
 		conn.Close()
 	}()
 
@@ -96,8 +83,8 @@ func (c *Controller) writeLoop(conn *ws.Conn, notificationsList types.ObjectList
 			return
 		default:
 		}
-		if err := conn.WriteJSON(notification); err != nil {
-			log.D().Errorf("ws: could not write: %v", err)
+
+		if !c.sendWsMessage(conn, notification) {
 			return
 		}
 	}
@@ -118,12 +105,38 @@ func (c *Controller) writeLoop(conn *ws.Conn, notificationsList types.ObjectList
 				c.sendWsClose(conn)
 				return
 			}
-			if err := conn.WriteJSON(notification); err != nil {
-				log.D().Errorf("ws: could not write: %v", err)
+
+			if !c.sendWsMessage(conn, notification) {
 				return
 			}
 		}
 	}
+}
+
+func (c *Controller) readLoop(conn *ws.Conn, done chan<- struct{}) {
+	defer func() {
+		done <- struct{}{}
+		conn.Close()
+	}()
+
+	for {
+		// ReadMessage is needed only to receive ping/pong/close control messages
+		// currently we don't expect to receive something else from the proxies
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			log.D().Errorf("ws: could not read: %v", err)
+			return
+		}
+	}
+}
+
+func (c *Controller) sendWsMessage(conn *ws.Conn, msg interface{}) bool {
+	// conn.SetWriteDeadline(time.Now().Add(c.wsUpgrader.))
+	if err := conn.WriteJSON(msg); err != nil {
+		log.D().Errorf("ws: could not write: %v", err)
+		return false
+	}
+	return true
 }
 
 func (c *Controller) sendWsClose(conn *ws.Conn) {

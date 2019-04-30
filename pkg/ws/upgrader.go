@@ -42,7 +42,7 @@ func (u *SmUpgrader) Start(baseCtx context.Context, work *sync.WaitGroup) {
 	go u.shutdown(baseCtx, work)
 }
 
-func (u *SmUpgrader) Upgrade(rw http.ResponseWriter, req *http.Request, header http.Header) (*Conn, error) {
+func (u *SmUpgrader) Upgrade(rw http.ResponseWriter, req *http.Request, header http.Header, done <-chan struct{}) (*Conn, error) {
 	u.shutdownMutex.Lock()
 	defer u.shutdownMutex.Unlock()
 	if u.isShutDown {
@@ -67,16 +67,17 @@ func (u *SmUpgrader) Upgrade(rw http.ResponseWriter, req *http.Request, header h
 	u.setCloseHandler(wsConn)
 
 	u.connWorkers.Add(1)
-	go u.handleConn(wsConn)
+	go u.handleConn(wsConn, done)
 
 	return wsConn, nil
 }
 
-func (u *SmUpgrader) handleConn(c *Conn) {
+func (u *SmUpgrader) handleConn(c *Conn, done <-chan struct{}) {
 	defer u.connWorkers.Done()
+	<-done
 	for {
 		select {
-		case <-c.Done:
+		case <-done:
 			u.removeConn(c.ID)
 			return
 		default:
@@ -112,14 +113,11 @@ func (u *SmUpgrader) setCloseHandler(c *Conn) {
 
 func (u *SmUpgrader) setConnTimeout(c *Conn) {
 	c.SetReadDeadline(time.Now().Add(u.options.PingTimeout))
-	// TODO: How to set write deadline, each time after write is executed?
-	// c.SetWriteDeadline(time.Now().Add(u.options.WriteTimeout))
 
 	c.SetPingHandler(func(message string) error {
 		c.SetReadDeadline(time.Now().Add(u.options.PingTimeout))
 
-		// TODO: Deadline?
-		err := c.WriteControl(websocket.PongMessage, []byte(message), time.Time{})
+		err := c.WriteControl(websocket.PongMessage, []byte(message), time.Now().Add(u.options.WriteTimeout))
 		if err == websocket.ErrCloseSent {
 			return nil
 		} else if e, ok := err.(net.Error); ok && e.Temporary() {
@@ -138,7 +136,6 @@ func (u *SmUpgrader) addConn(c *websocket.Conn, workGroup *sync.WaitGroup) (*Con
 		Conn:     c,
 		ID:       uuid.String(),
 		Shutdown: make(chan struct{}),
-		Done:     make(chan struct{}),
 		work:     workGroup,
 	}
 

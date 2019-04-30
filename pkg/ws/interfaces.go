@@ -7,6 +7,6 @@ import (
 )
 
 type Upgrader interface {
-	Upgrade(http.ResponseWriter, *http.Request, http.Header) (*Conn, error)
+	Upgrade(http.ResponseWriter, *http.Request, http.Header, <-chan struct{}) (*Conn, error)
 	Start(context.Context, *sync.WaitGroup)
 }
