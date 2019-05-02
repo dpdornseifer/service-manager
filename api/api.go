@@ -68,7 +68,7 @@ func (s *Settings) Validate() error {
 }
 
 // NewInterceptableTransactionalRepository returns the minimum set of REST APIs needed for the Service Manager
-func New(ctx context.Context, repository storage.Repository, settings *Settings, encrypter security.Encrypter, wsUpgrader ws.Upgrader, notificator notifications.Notificator) (*web.API, error) {
+func New(ctx context.Context, repository storage.Repository, settings *Settings, encrypter security.Encrypter, wsServer *ws.Server, notificator notifications.Notificator) (*web.API, error) {
 	bearerAuthnFilter, err := oauth.NewFilter(ctx, settings.TokenIssuerURL, settings.ClientID)
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func New(ctx context.Context, repository storage.Repository, settings *Settings,
 			NewController(repository, web.VisibilitiesURL, types.VisibilityType, func() types.Object {
 				return &types.Visibility{}
 			}),
-			apiNotifications.NewController(repository, wsUpgrader, notificator),
+			apiNotifications.NewController(repository, wsServer, notificator),
 			NewServiceOfferingController(repository),
 			NewServicePlanController(repository),
 			&info.Controller{

@@ -57,10 +57,9 @@ type ServiceManagerBuilder struct {
 
 	Storage     *storage.InterceptableTransactionalRepository
 	Notificator notifications.Notificator
+	WsServer    *ws.Server
 	ctx         context.Context
 	cfg         *server.Settings
-
-	wsUpgrader ws.Upgrader
 }
 
 // ServiceManager  struct
@@ -69,7 +68,7 @@ type ServiceManager struct {
 	Server      *server.Server
 	Notificator notifications.Notificator
 
-	wsUpgrader ws.Upgrader
+	WsServer *ws.Server
 }
 
 // DefaultEnv creates a default environment that can be used to boot up a Service Manager
@@ -140,8 +139,9 @@ func New(ctx context.Context, cancel context.CancelFunc, env env.Environment) *S
 	interceptableRepository := storage.NewInterceptableTransactionalRepository(smStorage, encrypter)
 
 	// TODO: Magic number
-	wsUpgrader := ws.NewUpgrader(&ws.UpgraderOptions{
-		PingTimeout: time.Second * 5,
+	wsServer := ws.NewServer(&ws.Settings{
+		PingTimeout:  time.Second * 5,
+		WriteTimeout: time.Second * 5,
 	})
 
 	pgNotificator, err := postgresNotificator.NewNotificator(smStorage, cfg.Storage, cfg.Notifications)
@@ -149,7 +149,7 @@ func New(ctx context.Context, cancel context.CancelFunc, env env.Environment) *S
 		panic(fmt.Sprintf("could not create notificator: %v", err))
 	}
 
-	API, err := api.New(ctx, interceptableRepository, cfg.API, encrypter, wsUpgrader, pgNotificator)
+	API, err := api.New(ctx, interceptableRepository, cfg.API, encrypter, wsServer, pgNotificator)
 	if err != nil {
 		panic(fmt.Sprintf("error creating core api: %s", err))
 	}
@@ -161,7 +161,7 @@ func New(ctx context.Context, cancel context.CancelFunc, env env.Environment) *S
 		API:         API,
 		Storage:     interceptableRepository,
 		Notificator: pgNotificator,
-		wsUpgrader:  wsUpgrader,
+		WsServer:    wsServer,
 	}
 
 	smb.WithCreateInterceptorProvider(types.ServiceBrokerType, &interceptors.BrokerCreateInterceptorProvider{
@@ -187,7 +187,7 @@ func (smb *ServiceManagerBuilder) Build() *ServiceManager {
 		ctx:         smb.ctx,
 		Server:      srv,
 		Notificator: smb.Notificator,
-		wsUpgrader:  smb.wsUpgrader,
+		WsServer:    smb.WsServer,
 	}
 }
 
@@ -204,7 +204,7 @@ func (sm *ServiceManager) Run() {
 	if err := sm.Notificator.Start(sm.ctx, wg); err != nil {
 		log.C(sm.ctx).WithError(err).Panic("could not start SM notificator")
 	}
-	sm.wsUpgrader.Start(sm.ctx, wg)
+	sm.WsServer.Start(sm.ctx, wg)
 	sm.Server.Run(sm.ctx, wg)
 	wg.Wait()
 }

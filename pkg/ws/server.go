@@ -13,21 +13,21 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type UpgraderOptions struct {
+type Settings struct {
 	PingTimeout  time.Duration `mapstructure:"ping_timeout"`
 	WriteTimeout time.Duration `mapstructure:"write_timeout"`
 }
 
-func NewUpgrader(options *UpgraderOptions) *SmUpgrader {
-	return &SmUpgrader{
+func NewServer(options *Settings) *Server {
+	return &Server{
 		conns:       make(map[string]*Conn),
 		options:     options,
 		connWorkers: &sync.WaitGroup{},
 	}
 }
 
-type SmUpgrader struct {
-	options *UpgraderOptions
+type Server struct {
+	options *Settings
 
 	conns       map[string]*Conn
 	connMutex   sync.Mutex
@@ -37,12 +37,12 @@ type SmUpgrader struct {
 	shutdownMutex sync.Mutex
 }
 
-func (u *SmUpgrader) Start(baseCtx context.Context, work *sync.WaitGroup) {
+func (u *Server) Start(baseCtx context.Context, work *sync.WaitGroup) {
 	work.Add(1)
 	go u.shutdown(baseCtx, work)
 }
 
-func (u *SmUpgrader) Upgrade(rw http.ResponseWriter, req *http.Request, header http.Header, done <-chan struct{}) (*Conn, error) {
+func (u *Server) Upgrade(rw http.ResponseWriter, req *http.Request, header http.Header, done <-chan struct{}) (*Conn, error) {
 	u.shutdownMutex.Lock()
 	defer u.shutdownMutex.Unlock()
 	if u.isShutDown {
@@ -72,7 +72,7 @@ func (u *SmUpgrader) Upgrade(rw http.ResponseWriter, req *http.Request, header h
 	return wsConn, nil
 }
 
-func (u *SmUpgrader) handleConn(c *Conn, done <-chan struct{}) {
+func (u *Server) handleConn(c *Conn, done <-chan struct{}) {
 	defer u.connWorkers.Done()
 	<-done
 	for {
@@ -85,7 +85,7 @@ func (u *SmUpgrader) handleConn(c *Conn, done <-chan struct{}) {
 	}
 }
 
-func (u *SmUpgrader) shutdown(ctx context.Context, work *sync.WaitGroup) {
+func (u *Server) shutdown(ctx context.Context, work *sync.WaitGroup) {
 	<-ctx.Done()
 	defer work.Done()
 
@@ -103,7 +103,7 @@ func (u *SmUpgrader) shutdown(ctx context.Context, work *sync.WaitGroup) {
 	u.connWorkers.Wait()
 }
 
-func (u *SmUpgrader) setCloseHandler(c *Conn) {
+func (u *Server) setCloseHandler(c *Conn) {
 	c.SetCloseHandler(func(code int, text string) error {
 		u.removeConn(c.ID)
 		c.Close()
@@ -111,7 +111,7 @@ func (u *SmUpgrader) setCloseHandler(c *Conn) {
 	})
 }
 
-func (u *SmUpgrader) setConnTimeout(c *Conn) {
+func (u *Server) setConnTimeout(c *Conn) {
 	c.SetReadDeadline(time.Now().Add(u.options.PingTimeout))
 
 	c.SetPingHandler(func(message string) error {
@@ -127,7 +127,7 @@ func (u *SmUpgrader) setConnTimeout(c *Conn) {
 	})
 }
 
-func (u *SmUpgrader) addConn(c *websocket.Conn, workGroup *sync.WaitGroup) (*Conn, error) {
+func (u *Server) addConn(c *websocket.Conn, workGroup *sync.WaitGroup) (*Conn, error) {
 	uuid, err := uuid.NewV4()
 	if err != nil {
 		return nil, err
@@ -145,7 +145,7 @@ func (u *SmUpgrader) addConn(c *websocket.Conn, workGroup *sync.WaitGroup) (*Con
 	return conn, nil
 }
 
-func (u *SmUpgrader) removeConn(id string) {
+func (u *Server) removeConn(id string) {
 	u.connMutex.Lock()
 	defer u.connMutex.Unlock()
 	delete(u.conns, id)

@@ -30,7 +30,7 @@ import (
 // Controller implements api.Controller by providing service plans API logic
 type Controller struct {
 	repository  storage.Repository
-	wsUpgrader  ws.Upgrader
+	wsServer    *ws.Server
 	notificator notifications.Notificator
 }
 
@@ -48,10 +48,10 @@ func (c *Controller) Routes() []web.Route {
 }
 
 // TODO: create the actual websocket handling and disable CRUD and List operations
-func NewController(repository storage.Repository, wsUpgrader ws.Upgrader, notificator notifications.Notificator) *Controller {
+func NewController(repository storage.Repository, wsServer *ws.Server, notificator notifications.Notificator) *Controller {
 	return &Controller{
 		repository:  repository,
-		wsUpgrader:  wsUpgrader,
+		wsServer:    wsServer,
 		notificator: notificator,
 	}
 }

@@ -54,7 +54,7 @@ func (c *Controller) handleWS(req *web.Request) (*web.Response, error) {
 	rw := req.HijackResponseWriter()
 
 	done := make(chan struct{}, 1)
-	conn, err := c.wsUpgrader.Upgrade(rw, req.Request, http.Header{
+	conn, err := c.wsServer.Upgrade(rw, req.Request, http.Header{
 		"last_known_revision": []string{strconv.FormatInt(lastKnownRevision, 10)},
 	}, done)
 	if err != nil {
