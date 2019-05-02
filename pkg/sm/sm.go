@@ -35,6 +35,7 @@ import (
 	"github.com/Peripli/service-manager/api"
 	"github.com/Peripli/service-manager/api/healthcheck"
 	"github.com/Peripli/service-manager/config"
+	postgresNotificator "github.com/Peripli/service-manager/notifications/postgres"
 	"github.com/Peripli/service-manager/pkg/log"
 	"github.com/Peripli/service-manager/pkg/security"
 	"github.com/Peripli/service-manager/pkg/server"
@@ -60,7 +61,6 @@ type ServiceManagerBuilder struct {
 	cfg         *server.Settings
 
 	wsUpgrader ws.Upgrader
-	wsCh       chan struct{}
 }
 
 // ServiceManager  struct
@@ -70,7 +70,6 @@ type ServiceManager struct {
 	Notificator notifications.Notificator
 
 	wsUpgrader ws.Upgrader
-	wsCh       chan struct{}
 }
 
 // DefaultEnv creates a default environment that can be used to boot up a Service Manager
@@ -140,32 +139,21 @@ func New(ctx context.Context, cancel context.CancelFunc, env env.Environment) *S
 	log.C(ctx).Info("Setting up Service Manager core API...")
 	interceptableRepository := storage.NewInterceptableTransactionalRepository(smStorage, encrypter)
 
-	notificationSettings := pgNotification.DefaultSettings()
-	notificationSettings.URI = cfg.Storage.URI
-	pgNotificaitonStorage, err := pgNotification.NewNotificationStorage(smStorage, notificationSettings)
-	if err != nil {
-		panic(fmt.Errorf("could not initialize postgres notification storage: %v", err))
-	}
-	// TODO: Magic number
-	pgNotificator, err := pgNotification.NewNotificator(pgNotificaitonStorage, 100)
-	if err != nil {
-		panic(fmt.Errorf("could not initialize postgres notificator: %v", err))
-	}
-
 	// TODO: Magic number
 	wsUpgrader := ws.NewUpgrader(&ws.UpgraderOptions{
 		PingTimeout: time.Second * 5,
 	})
+
+	pgNotificator, err := postgresNotificator.NewNotificator(smStorage, cfg.Storage, cfg.Notifications)
+	if err != nil {
+		panic(fmt.Sprintf("could not create notificator: %v", err))
+	}
 
 	API, err := api.New(ctx, interceptableRepository, cfg.API, encrypter, wsUpgrader, pgNotificator)
 	if err != nil {
 		panic(fmt.Sprintf("error creating core api: %s", err))
 	}
 	API.AddHealthIndicator(&storage.HealthIndicator{Pinger: storage.PingFunc(smStorage.Ping)})
-	pgNotificator, err := postgresNotificator.NewNotificator(smStorage, cfg.Storage, cfg.Notifications)
-	if err != nil {
-		panic(fmt.Sprintf("could not create notificator: %v", err))
-	}
 
 	smb := &ServiceManagerBuilder{
 		ctx:         ctx,
@@ -174,7 +162,6 @@ func New(ctx context.Context, cancel context.CancelFunc, env env.Environment) *S
 		Storage:     interceptableRepository,
 		Notificator: pgNotificator,
 		wsUpgrader:  wsUpgrader,
-		wsCh:        wsCh,
 	}
 
 	smb.WithCreateInterceptorProvider(types.ServiceBrokerType, &interceptors.BrokerCreateInterceptorProvider{
@@ -200,7 +187,6 @@ func (smb *ServiceManagerBuilder) Build() *ServiceManager {
 		ctx:         smb.ctx,
 		Server:      srv,
 		Notificator: smb.Notificator,
-		wsCh:        smb.wsCh,
 		wsUpgrader:  smb.wsUpgrader,
 	}
 }
@@ -218,8 +204,8 @@ func (sm *ServiceManager) Run() {
 	if err := sm.Notificator.Start(sm.ctx, wg); err != nil {
 		log.C(sm.ctx).WithError(err).Panic("could not start SM notificator")
 	}
-	sm.wsUpgrader.Start(sm.ctx, sm.wg)
-	sm.Server.Run(sm.ctx, sm.wsCh)
+	sm.wsUpgrader.Start(sm.ctx, wg)
+	sm.Server.Run(sm.ctx, wg)
 	wg.Wait()
 }
 

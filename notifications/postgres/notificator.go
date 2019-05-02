@@ -93,11 +93,7 @@ func (n *Notificator) Start(ctx context.Context, group *sync.WaitGroup) error {
 	return nil
 }
 
-func (n *notificator) RegisterConsumer(userContext *web.UserContext) (notifications.NotificationQueue, int64, error) {
-	queue, err := notifications.NewNotificationQueue(n.queueSize)
-	if err != nil {
-		return nil, invalidRevisionNumber, err
-	}
+func (n *Notificator) RegisterConsumer(userContext *web.UserContext) (notifications.NotificationQueue, int64, error) {
 	platform := &types.Platform{}
 	err := userContext.Data.Data(platform)
 	if err != nil {

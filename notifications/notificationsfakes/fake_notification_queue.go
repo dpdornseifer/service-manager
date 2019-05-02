@@ -9,17 +9,15 @@ import (
 )
 
 type FakeNotificationQueue struct {
-	ChannelStub        func() (<-chan *types.Notification, error)
+	ChannelStub        func() <-chan *types.Notification
 	channelMutex       sync.RWMutex
 	channelArgsForCall []struct {
 	}
 	channelReturns struct {
 		result1 <-chan *types.Notification
-		result2 error
 	}
 	channelReturnsOnCall map[int]struct {
 		result1 <-chan *types.Notification
-		result2 error
 	}
 	CloseStub        func()
 	closeMutex       sync.RWMutex
@@ -50,7 +48,7 @@ type FakeNotificationQueue struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeNotificationQueue) Channel() (<-chan *types.Notification, error) {
+func (fake *FakeNotificationQueue) Channel() <-chan *types.Notification {
 	fake.channelMutex.Lock()
 	ret, specificReturn := fake.channelReturnsOnCall[len(fake.channelArgsForCall)]
 	fake.channelArgsForCall = append(fake.channelArgsForCall, struct {
@@ -61,10 +59,10 @@ func (fake *FakeNotificationQueue) Channel() (<-chan *types.Notification, error)
 		return fake.ChannelStub()
 	}
 	if specificReturn {
-		return ret.result1, ret.result2
+		return ret.result1
 	}
 	fakeReturns := fake.channelReturns
-	return fakeReturns.result1, fakeReturns.result2
+	return fakeReturns.result1
 }
 
 func (fake *FakeNotificationQueue) ChannelCallCount() int {
@@ -73,36 +71,33 @@ func (fake *FakeNotificationQueue) ChannelCallCount() int {
 	return len(fake.channelArgsForCall)
 }
 
-func (fake *FakeNotificationQueue) ChannelCalls(stub func() (<-chan *types.Notification, error)) {
+func (fake *FakeNotificationQueue) ChannelCalls(stub func() <-chan *types.Notification) {
 	fake.channelMutex.Lock()
 	defer fake.channelMutex.Unlock()
 	fake.ChannelStub = stub
 }
 
-func (fake *FakeNotificationQueue) ChannelReturns(result1 <-chan *types.Notification, result2 error) {
+func (fake *FakeNotificationQueue) ChannelReturns(result1 <-chan *types.Notification) {
 	fake.channelMutex.Lock()
 	defer fake.channelMutex.Unlock()
 	fake.ChannelStub = nil
 	fake.channelReturns = struct {
 		result1 <-chan *types.Notification
-		result2 error
-	}{result1, result2}
+	}{result1}
 }
 
-func (fake *FakeNotificationQueue) ChannelReturnsOnCall(i int, result1 <-chan *types.Notification, result2 error) {
+func (fake *FakeNotificationQueue) ChannelReturnsOnCall(i int, result1 <-chan *types.Notification) {
 	fake.channelMutex.Lock()
 	defer fake.channelMutex.Unlock()
 	fake.ChannelStub = nil
 	if fake.channelReturnsOnCall == nil {
 		fake.channelReturnsOnCall = make(map[int]struct {
 			result1 <-chan *types.Notification
-			result2 error
 		})
 	}
 	fake.channelReturnsOnCall[i] = struct {
 		result1 <-chan *types.Notification
-		result2 error
-	}{result1, result2}
+	}{result1}
 }
 
 func (fake *FakeNotificationQueue) Close() {

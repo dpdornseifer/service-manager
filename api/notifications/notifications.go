@@ -89,11 +89,7 @@ func (c *Controller) writeLoop(conn *ws.Conn, notificationsList types.ObjectList
 		}
 	}
 
-	notificationChannel, err := q.Channel()
-	if err != nil {
-		log.D().Errorf("Could not aquire notification channel: %v", err)
-		return
-	}
+	notificationChannel := q.Channel()
 
 	for {
 		select {

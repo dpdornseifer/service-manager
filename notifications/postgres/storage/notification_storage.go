@@ -41,8 +41,7 @@ type NotificationStorage interface {
 	NewConnection(eventCallback func(isRunning bool, err error)) NotificationConnection
 }
 
-// NewNotificationStorage returns storage for notifications
-func NewNotificationStorage(st storage.Storage, settings *Settings) (NotificationStorage, error) {
+func NewNotificationStorage(st storage.Storage, storageURI string, minReconnectInterval time.Duration, maxReconnectInterval time.Duration) (NotificationStorage, error) {
 	pgStorage, ok := st.(*postgres.PostgresStorage)
 	if !ok {
 		return nil, errors.New("expected notification storage to be Postgres")
@@ -56,8 +55,10 @@ func NewNotificationStorage(st storage.Storage, settings *Settings) (Notificatio
 }
 
 type notificationStorage struct {
-	*postgres.PostgresStorage
-	settings *Settings
+	storage              *postgres.PostgresStorage
+	storageURI           string
+	minReconnectInterval time.Duration
+	maxReconnectInterval time.Duration
 }
 
 func (ns *notificationStorage) GetLastRevision(ctx context.Context) (int64, error) {
