@@ -127,7 +127,7 @@ func (c *Controller) readLoop(conn *ws.Conn, done chan<- struct{}) {
 }
 
 func (c *Controller) sendWsMessage(conn *ws.Conn, msg interface{}) bool {
-	// conn.SetWriteDeadline(time.Now().Add(c.wsUpgrader.))
+	conn.SetWriteDeadline(time.Now().Add(c.wsServer.Options.WriteTimeout))
 	if err := conn.WriteJSON(msg); err != nil {
 		log.D().Errorf("ws: could not write: %v", err)
 		return false

@@ -21,13 +21,13 @@ type Settings struct {
 func NewServer(options *Settings) *Server {
 	return &Server{
 		conns:       make(map[string]*Conn),
-		options:     options,
+		Options:     options,
 		connWorkers: &sync.WaitGroup{},
 	}
 }
 
 type Server struct {
-	options *Settings
+	Options *Settings
 
 	conns       map[string]*Conn
 	connMutex   sync.Mutex
@@ -52,7 +52,7 @@ func (u *Server) Upgrade(rw http.ResponseWriter, req *http.Request, header http.
 	if header == nil {
 		header = http.Header{}
 	}
-	header.Add("max_ping_interval", u.options.PingTimeout.String())
+	header.Add("max_ping_interval", u.Options.PingTimeout.String())
 
 	upgrader := &websocket.Upgrader{}
 	conn, err := upgrader.Upgrade(rw, req, header)
@@ -112,12 +112,12 @@ func (u *Server) setCloseHandler(c *Conn) {
 }
 
 func (u *Server) setConnTimeout(c *Conn) {
-	c.SetReadDeadline(time.Now().Add(u.options.PingTimeout))
+	c.SetReadDeadline(time.Now().Add(u.Options.PingTimeout))
 
 	c.SetPingHandler(func(message string) error {
-		c.SetReadDeadline(time.Now().Add(u.options.PingTimeout))
+		c.SetReadDeadline(time.Now().Add(u.Options.PingTimeout))
 
-		err := c.WriteControl(websocket.PongMessage, []byte(message), time.Now().Add(u.options.WriteTimeout))
+		err := c.WriteControl(websocket.PongMessage, []byte(message), time.Now().Add(u.Options.WriteTimeout))
 		if err == websocket.ErrCloseSent {
 			return nil
 		} else if e, ok := err.(net.Error); ok && e.Temporary() {
