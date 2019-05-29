@@ -123,11 +123,13 @@ var _ = Describe("Interceptable TransactionalRepository", func() {
 				return obj, nil
 			})
 
-			fakeStorage.GetReturns(&types.ServiceBroker{
-				Base: types.Base{
-					UpdatedAt: updateTime,
-				},
-			}, nil)
+			fakeStorage.GetCalls(func(ctx context.Context, objectType types.ObjectType, s string) (types.Object, error) {
+				return &types.ServiceBroker{
+					Base: types.Base{
+						UpdatedAt: updateTime,
+					},
+				}, nil
+			})
 
 			interceptableRepository = storage.NewInterceptableTransactionalRepository(fakeStorage, fakeEncrypter)
 
@@ -241,12 +243,15 @@ var _ = Describe("Interceptable TransactionalRepository", func() {
 				return func(ctx context.Context, txStorage storage.Repository, oldObj, newObj types.Object, labelChanges ...*query.LabelChange) (types.Object, error) {
 					o, err := txStorage.Update(ctx, newObj, labelChanges...)
 					Expect(err).ShouldNot(HaveOccurred())
+					updateTime = o.GetUpdatedAt()
 
 					o, err = next(ctx, txStorage, oldObj, newObj, labelChanges...)
 					Expect(err).ShouldNot(HaveOccurred())
+					updateTime = o.GetUpdatedAt()
 
 					o, err = txStorage.Update(ctx, newObj, labelChanges...)
 					Expect(err).ShouldNot(HaveOccurred())
+					updateTime = o.GetUpdatedAt()
 
 					return o, nil
 				}
@@ -288,7 +293,6 @@ var _ = Describe("Interceptable TransactionalRepository", func() {
 	})
 
 	Describe("Register interceptor", func() {
-
 		BeforeEach(func() {
 			interceptableRepository = storage.NewInterceptableTransactionalRepository(nil, nil)
 		})
